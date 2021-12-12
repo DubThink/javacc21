@@ -86,7 +86,7 @@
       [#if grammar.faultTolerant && expansion.requiresRecoverMethod && !expansion.possiblyEmpty]
          if (pendingRecovery) {
             if (debugFaultTolerant) LOGGER.info("Re-synching to expansion at: ${expansion.location?j_string}");
-            ${expansion.recoverMethodName}();
+            ${expansion.recoverMethodName}(pendingParseException);
          }
       [/#if]
        [@TreeBuildingAndRecovery expansion]
@@ -153,12 +153,17 @@
             ${parseExceptionVar} = e;
             [#if !canRecover]
               [#if grammar.faultTolerant]
-                if (isParserTolerant()) this.pendingRecovery = true;
+                if (isParserTolerant()){
+                    this.pendingRecovery = true;
+                    this.pendingParseException = e;
+                }
               [/#if]
               throw e;
             [#else]
              if (!isParserTolerant()) throw e;
              this.pendingRecovery = true;
+             this.pendingParseException = e;
+
              ${expansion.customErrorRecoveryBlock!}
              [#if !production?is_null && production.returnType != "void"]
                 [#var rt = production.returnType]
@@ -425,7 +430,7 @@
              if (debugFaultTolerant) LOGGER.info("Skipping token " + lastConsumedToken.getImage() + " at: " + lastConsumedToken.getLocation());
           }
           if (debugFaultTolerant) LOGGER.info("Repeat re-sync for expansion at: ${loopExpansion.location?j_string}");
-          ${loopExpansion.recoverMethodName}();
+          ${loopExpansion.recoverMethodName}(pe);
           if (pendingRecovery) throw pe;
        }
    [/#if]
@@ -561,7 +566,7 @@
 --]
 [#macro BuildRecoverRoutines]
    [#list grammar.expansionsNeedingRecoverMethod as expansion]
-       private void ${expansion.recoverMethodName}() {
+       private void ${expansion.recoverMethodName}(ParseException pe) {
           Token initialToken = lastConsumedToken;
           java.util.List<Token> skippedTokens = new java.util.ArrayList<>();
           boolean success = false;
@@ -607,17 +612,27 @@
           if (!success && !skippedTokens.isEmpty()) {
              lastConsumedToken = initialToken;
           } 
-          if (success&& !skippedTokens.isEmpty()) {
+          if (success) {
              InvalidNode iv = new InvalidNode();
-             for (Token tok : skippedTokens) {
-                iv.addChild(tok);
+             if(skippedTokens.isEmpty()){
+                 if (debugFaultTolerant) {
+                     LOGGER.info("Recovered immediately without skipping tokens");
+                 }
+             } else {
+                 for (Token tok : skippedTokens) {
+                     iv.addChild(tok);
+                 }
+                 if (debugFaultTolerant) {
+                     LOGGER.info("Skipping " + skippedTokens.size() + " tokens starting at: " + skippedTokens.get(0).getLocation());
+                 }
              }
-             if (debugFaultTolerant) {
-                LOGGER.info("Skipping " + skippedTokens.size() + " tokens starting at: " + skippedTokens.get(0).getLocation());
-             }
+             iv.setCause(pe);
              pushNode(iv);
+             addParsingProblem(iv);
           }
           pendingRecovery = !success;
+          if(!pendingRecovery)
+            reportRecovered(pe, lastConsumedToken);
        }
    [/#list]
 [/#macro]

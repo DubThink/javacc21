@@ -23,6 +23,7 @@ public class PyTest {
 
     static public void main(String args[]) throws IOException {
         for (String arg : args) {
+            System.out.println(arg);
             if (arg.equals("-p")) {
                 parallelParsing = true;
                 roots = Collections.synchronizedList(roots);

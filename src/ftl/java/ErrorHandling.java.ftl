@@ -199,9 +199,11 @@ void dumpLookaheadCallStack(PrintStream ps) {
 
 [#if grammar.faultTolerant] 
     private boolean tolerantParsing = true;
+    private boolean tolerantParsingEnableFixups= false;
     // Are we pending a recovery routine to
     // get back on the rails?
     private boolean pendingRecovery;
+    private ParseException pendingParseException;
   [#if grammar.debugFaultTolerant]
     private boolean debugFaultTolerant = true;
   [#else]
@@ -229,6 +231,11 @@ void dumpLookaheadCallStack(PrintStream ps) {
     void addParsingProblem(ParsingProblem problem) {
         parsingProblems.add(problem);
     }
+
+    void reportRecovered(ParseException exception, Token lastConsumed){
+        LOGGER.info("Recovered after "+lastConsumed.getLocation()+" from "+exception.getMessage().replace("\n","\\n")+"\n");
+    }
+
 [/#if]    
 
     public boolean isParserTolerant() {
@@ -244,6 +251,16 @@ void dumpLookaheadCallStack(PrintStream ps) {
           this.tolerantParsing = tolerantParsing;
         [#else]
           if (tolerantParsing) {
+            throw new UnsupportedOperationException("This parser was not built with that feature!");
+          }
+        [/#if]
+    }
+
+    public void setParserTolerantEnableFixups(boolean enableFixups) {
+        [#if grammar.faultTolerant]
+          this.tolerantParsingEnableFixups = enableFixups;
+        [#else]
+          if (enableFixups) {
             throw new UnsupportedOperationException("This parser was not built with that feature!");
           }
         [/#if]
@@ -298,7 +315,7 @@ void dumpLookaheadCallStack(PrintStream ps) {
       [#if !grammar.faultTolerant]
        throw new ParseException(nextToken, EnumSet.of(expectedType), parsingStack);
       [#else]
-       if (!this.tolerantParsing) {
+       if (!this.tolerantParsing || (!this.tolerantParsingEnableFixups&&!tolerant)) {
           throw new ParseException(nextToken, EnumSet.of(expectedType), parsingStack);
        }
        Token nextNext = nextToken(nextToken);
